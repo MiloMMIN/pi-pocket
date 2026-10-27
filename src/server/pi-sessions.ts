@@ -12,8 +12,10 @@
  * finished gets a result saying so (Pi's says "No result provided"). Where Pi would send a tool result whose call is
  * not there (a stray one, or one whose call a context edit took out), Pi Durable leaves it out, as providers refuse it.
  */
+import { existsSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import type { Message } from "@earendil-works/pi-ai";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import {
     buildSessionProjection,
     convertToLlm,
@@ -30,15 +32,20 @@ import {
     CompactionEntry,
     type ContextEdit,
     type ConversationId,
+    type Cursor,
     type EntryId,
+    type EntryRecord,
     ToolResultEntry,
     type Tx,
     UserEntry,
 } from "@earendil-works/pi-durable";
 import type { PocketApp } from "./app.ts";
 import type { User } from "./config.ts";
+import { SessionsDoc } from "./docs.ts";
 import { FROM_PI_ENTRY, type FromPiData } from "./entry-format.ts";
 import { HttpError } from "./errors.ts";
+
+const context = BACKGROUND_CONTEXT;
 
 /** Pi's variable for its sessions folder (`ENV_SESSION_DIR` in its config, which the package does not export). */
 const SESSION_DIR_VARIABLE = "PI_CODING_AGENT_SESSION_DIR";
@@ -292,7 +299,7 @@ export async function writePiSession(
     id: ConversationId,
     session: PiSession,
     data: FromPiData,
-): Promise<void> {
+): Promise<EntryRecord> {
     const made = new Map<string, EntryId>();
 
     for (const entry of session.entries) {
@@ -333,7 +340,7 @@ export async function writePiSession(
     });
 
     // Last, after every entry it edits; it adds nothing for Pi itself.
-    await tx.appendEntry(id, {
+    return await tx.appendEntry(id, {
         kind: FROM_PI_ENTRY,
         data,
         ...(edits.length === 0 ? {} : { edits }),
@@ -552,5 +559,139 @@ export class PiSessions {
                 ? {}
                 : { pocket: { id: pocket.id, behind: session.count > pocket.count } }),
         };
+    }
+    /**
+     * Updates the lastSyncedEntryId and message count for a session continued from Pi.
+     */
+    async #updateLastSyncedId(
+        conversationId: ConversationId,
+        highestId: number,
+        addedCount: number,
+        filePath?: string,
+    ): Promise<void> {
+        await this.#app.harness.commit(async (tx) => {
+            const meta = (await tx.doc(SessionsDoc)).items[String(conversationId)];
+            if (meta?.fromPi) {
+                meta.fromPi.lastSyncedEntryId = highestId;
+                meta.fromPi.count = (meta.fromPi.count ?? 0) + addedCount;
+                if (filePath && !meta.fromPi.file) {
+                    meta.fromPi.file = filePath;
+                }
+            }
+        }, context);
+    }
+
+    /**
+     * Syncs new messages in a conversation back to the original Pi CLI session JSONL file.
+     * Called automatically when a run ends, or on-demand.
+     */
+    async syncBack(
+        conversationId: ConversationId,
+    ): Promise<{ synced: number; file: string } | null> {
+        const meta = this.#app.sessionMeta(conversationId);
+        if (!meta) {
+            return null;
+        }
+
+        let filePath = meta.fromPi?.file;
+        const conversation = await this.#app.conversation(conversationId);
+
+        let cursor: Cursor | undefined;
+        const allItems: EntryRecord[] = [];
+        do {
+            const page = await conversation.entries({}, 256, cursor, context);
+            allItems.push(...page.items);
+            cursor = page.next;
+        } while (cursor !== undefined);
+
+        const fromPiEntry = allItems.find((e) => e.kind === FROM_PI_ENTRY);
+        if (!fromPiEntry) {
+            return null;
+        }
+
+        if (!filePath) {
+            const fromPiData = fromPiEntry.data as Partial<FromPiData> | undefined;
+            filePath = fromPiData?.file;
+        }
+
+        if (!filePath || !existsSync(filePath)) {
+            return null;
+        }
+
+        const baseEntryId = Number(fromPiEntry.id);
+        const lastSyncedId =
+            meta.fromPi?.lastSyncedEntryId !== undefined && meta.fromPi.lastSyncedEntryId > 0
+                ? meta.fromPi.lastSyncedEntryId
+                : baseEntryId;
+
+        const newEntries = allItems.filter((e) => Number(e.id) > lastSyncedId);
+        if (newEntries.length === 0) {
+            return { synced: 0, file: filePath };
+        }
+
+        // Only conversation messages: pi.user, pi.assistant, pi.tool-result
+        const validKinds = new Set(["pi.user", "pi.assistant", "pi.tool-result"]);
+        const messageEntries = newEntries.filter(
+            (e) => validKinds.has(e.kind) && Array.isArray(e.model) && e.model.length > 0,
+        );
+
+        const highestId = Math.max(...newEntries.map((e) => Number(e.id)));
+
+        if (messageEntries.length === 0) {
+            await this.#updateLastSyncedId(conversationId, highestId, 0, filePath);
+            return { synced: 0, file: filePath };
+        }
+
+        try {
+            const manager = SessionManager.open(filePath);
+            let syncedCount = 0;
+
+            for (const entry of messageEntries) {
+                const msg = entry.model![0] as Message;
+                if (!msg || !msg.role) continue;
+                manager.appendMessage(msg);
+                syncedCount++;
+            }
+
+            await this.#updateLastSyncedId(conversationId, highestId, syncedCount, filePath);
+            return { synced: syncedCount, file: filePath };
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    /**
+     * Trigger manual sync for all or a specific Pi session, for the owner.
+     */
+    async sync(
+        user: User,
+        conversationId?: number,
+    ): Promise<{ count: number; results: Array<{ id: number; synced: number; file: string }> }> {
+        this.#requireOwner(user);
+
+        const results: Array<{ id: number; synced: number; file: string }> = [];
+
+        if (conversationId !== undefined) {
+            const cid = conversationId as unknown as ConversationId;
+            const res = await this.syncBack(cid);
+            if (res) {
+                results.push({ id: conversationId, ...res });
+            }
+        } else {
+            for (const session of this.#app.sessions()) {
+                const meta = this.#app.sessionMeta(session.id as unknown as ConversationId);
+                if (meta?.fromPi) {
+                    const cid = session.id as unknown as ConversationId;
+                    try {
+                        const res = await this.syncBack(cid);
+                        if (res) {
+                            results.push({ id: session.id, ...res });
+                        }
+                    } catch {}
+                }
+            }
+        }
+
+        return { count: results.reduce((acc, r) => acc + r.synced, 0), results };
     }
 }

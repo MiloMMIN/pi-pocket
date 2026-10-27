@@ -42,7 +42,8 @@ export type SessionMeta = {
     /** The git worktree the session works in, when it has one of its own. */
     worktree?: Worktree;
     /** The session of Pi's in the terminal this one continues, and how many messages its file had then. */
-    fromPi?: { session: string; count: number };
+    /** The session of Pi's in the terminal this one continues, and how many messages its file had then. */
+    fromPi?: { session: string; count: number; file?: string; lastSyncedEntryId?: number };
     /**
      * The id of the person whose PiP this is: their assistant, which looks after their other sessions (`pip.ts`). PiP is
      * kept out of the session list; an older Pi Pocket, which does not know this field, lists it as a session.

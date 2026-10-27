@@ -67,15 +67,18 @@ export function cleanTitle(reply: string): string | undefined {
 }
 
 /** Add one response's usage to the session's ledger, as Pi Durable does for its own. */
-function addUsage(total: Usage, usage: Usage): void {
-    total.input += usage.input;
-    total.output += usage.output;
-    total.cacheRead += usage.cacheRead;
-    total.cacheWrite += usage.cacheWrite;
-    total.totalTokens += usage.totalTokens;
+function addUsage(total: Usage, usage?: Usage): void {
+    if (!usage) return;
+    total.input += usage.input ?? 0;
+    total.output += usage.output ?? 0;
+    total.cacheRead += usage.cacheRead ?? 0;
+    total.cacheWrite += usage.cacheWrite ?? 0;
+    total.totalTokens += usage.totalTokens ?? (usage.input ?? 0) + (usage.output ?? 0);
 
-    for (const key of ["input", "output", "cacheRead", "cacheWrite", "total"] as const) {
-        total.cost[key] += usage.cost[key];
+    if (usage.cost) {
+        for (const key of ["input", "output", "cacheRead", "cacheWrite", "total"] as const) {
+            total.cost[key] += usage.cost[key] ?? 0;
+        }
     }
 }
 

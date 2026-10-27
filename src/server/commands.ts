@@ -467,19 +467,24 @@ export class Commands {
                         : { thinkingLevel: start.thinkingLevel }),
                 },
                 init: async (tx, id) => {
+                    const fromPiRecord = await writePiSession(tx, id, session, {
+                        session: session.id,
+                        title: session.title,
+                        file: path,
+                    });
                     (await tx.doc(SessionsDoc)).items[String(id)] = {
                         cwd,
                         title,
                         createdAt: now,
                         updatedAt: now,
                         createdBy: user.id,
-                        fromPi: { session: session.id, count: session.count },
+                        fromPi: {
+                            session: session.id,
+                            count: session.count,
+                            file: path,
+                            lastSyncedEntryId: Number(fromPiRecord.id),
+                        },
                     };
-                    await writePiSession(tx, id, session, {
-                        session: session.id,
-                        title: session.title,
-                        file: path,
-                    });
                 },
             },
             context,

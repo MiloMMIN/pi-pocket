@@ -482,6 +482,13 @@ export function createApi(options: HttpOptions, auth: Auth) {
             return json(response, 200, await app.commands.continuePiSession(user, body.path));
         }
 
+        if (first === "pi-sessions" && second === "sync" && method === "POST") {
+            const body = await readJson<{ id?: unknown }>(request).catch(() => ({ id: undefined }));
+            const id = typeof body.id === "number" ? body.id : undefined;
+
+            return json(response, 200, await app.piSessions.sync(user, id));
+        }
+
         if (first === "sessions" && second === undefined && method === "POST") {
             const body = await readJson<{ cwd?: string; title?: string; worktree?: unknown }>(
                 request,

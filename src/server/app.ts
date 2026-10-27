@@ -886,6 +886,13 @@ export class PocketApp {
         }
 
         await this.pip.tuneAll((line) => this.#log(line));
+        // Automatically sync new messages back to the original terminal Pi session when a run ends.
+        this.events.on("run.ended", ({ session, conversationId }) => {
+            const targetId = (session || conversationId) as unknown as ConversationId;
+            void this.piSessions.syncBack(targetId).catch((error: unknown) => {
+                this.#log(`[pi-sync] Failed to sync session ${targetId}: ${describe(error)}`);
+            });
+        });
         // Work a previous process left unfinished continues now.
         this.harness.resume();
     }
