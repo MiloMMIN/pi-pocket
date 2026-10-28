@@ -1,0 +1,11 @@
+serverAddr = "150.109.246.26"
+serverPort = 7000
+auth.method = "token"
+auth.token = "bae9568cfe79ba44bc2e4a440f19e7190d392235d905a402"
+
+[[proxies]]
+name = "piming"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 8797
+remotePort = 18787
