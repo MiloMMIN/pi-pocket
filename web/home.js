@@ -5,6 +5,7 @@ import { useEffect, useRef } from "preact/hooks";
 import { sessionMark } from "./sessions.js";
 import { canSteer, navigate, openSheet, scoped, store, workspaceOrder } from "./store.js";
 import { lookLabel, prefs } from "./theme.js";
+import { piSessionsAvailable } from "./sheets/pi-sessions.js";
 import { html, Icon, Keys, shortPath, timeAgo } from "./ui.js";
 
 const LOGO = [
@@ -131,6 +132,17 @@ export function Splash() {
                 >
                     <${Icon} name="plus" size=${16} /> New session <${Keys} keys="Alt N" />
                 </button>`
+
+            ${
+                piSessionsAvailable() &&
+                html`<button
+                    class="button"
+                    style="border-color: var(--o-accent, #3b82f6); color: var(--o-accent, #3b82f6); font-weight: 600;"
+                    onClick=${() => openSheet({ type: "pi-sessions" })}
+                >
+                    <${Icon} name="terminal" size=${16} /> 继续终端 Pi 会话…
+                </button>`
+            }
             }
             <button class="button" onClick=${() => store.set({ launcher: true })}>
                 <${Icon} name="command" size=${16} /> Launcher <${Keys} keys="Mod K" />

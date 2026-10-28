@@ -33,6 +33,7 @@ import {
     toggleFoldedLinked,
 } from "./store.js";
 import { finishedUnseen } from "./seen.js";
+import { piSessionsAvailable } from "./sheets/pi-sessions.js";
 import { isPinned, prefs, setPrefs, togglePin } from "./theme.js";
 import {
     APPLE,
@@ -1423,8 +1424,23 @@ function AllSessions({ compact = false }) {
             ${
                 sessionsLoaded &&
                 shown.length === 0 &&
-                html`<div class="sessions-empty">
-                    ${kept !== null && !needle ? "No sessions match the filters." : archived ? "No archived sessions." : needle ? "No matches." : "No sessions yet. Start one with New."}
+                html`<div class="sessions-empty" style="padding: 16px; text-align: center;">
+                    <div style="margin-bottom: 12px; color: var(--muted, #888); font-size: 13px;">
+                        ${kept !== null && !needle ? "No sessions match the filters." : archived ? "No archived sessions." : needle ? "No matches." : "暂无 Pi Pocket 会话"}
+                    </div>
+                    ${
+                        piSessionsAvailable() &&
+                        !needle &&
+                        !archived &&
+                        html`<button
+                            type="button"
+                            class="button primary small"
+                            style="width: 100%; font-size: 13px; font-weight: 600;"
+                            onClick=${() => openSheet({ type: "pi-sessions" })}
+                        >
+                            <${Icon} name="terminal" size=${14} /> 继续电脑终端会话…
+                        </button>`
+                    }
                 </div>`
             }
             ${groups.map((group) => {
