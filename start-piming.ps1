@@ -35,7 +35,7 @@ if (Test-Path $configPath) {
 # 3. 打印专属访问地址
 Write-Host "[2/3] 双重鉴权公网入口信息：" -ForegroundColor Yellow
 Write-Host "      公网主页: https://piming.youmeansi.com" -ForegroundColor Cyan
-Write-Host "      第一道门禁 (Nginx Basic Auth): 用户名 ming / 密码 PiMing2026!" -ForegroundColor DarkGray
+Write-Host "      第一道门禁 (WebUI 登录页，完美适配 Bitwarden 自动填充): 用户名 ming / 密码 PiMing2026!" -ForegroundColor DarkGray
 if ($token) {
     Write-Host "      手机一键直连(带Owner令牌): https://piming.youmeansi.com/?token=$token" -ForegroundColor Green
 }
